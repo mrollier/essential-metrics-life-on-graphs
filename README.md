@@ -57,6 +57,7 @@ essential-metrics-life-on-graphs/
     └─ essential-metrics_figures.ipynb
 ├─ README.md
 ├─ environment.yml
+├─ .gitignore
 └─ pyproject.toml
 ```
 
