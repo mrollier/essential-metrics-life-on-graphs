@@ -1,2 +1,4 @@
 data/final_defect_densities.h5
 data/final_state_densities.h5
+__pycache__/
+.pytest_cache/
