@@ -14,6 +14,10 @@ For each family and degree:
   * 21 log-spaced p values in [0.01, 1] at rho^0 = 1/2 (new realisations for every p);
   * G network realisations x M initial configurations per point, at most T time steps.
 
+The number of nodes is N = L * L by default. The ring family is not tied to a grid, so --N
+sets it directly there (the thesis uses N = 1000); for the grid family N = L * L is the only
+possibility and --N is refused if it disagrees. T defaults to 2 N with the effective N.
+
 Results are checkpointed to <out>/<family>_k<k>_{dens,prob}.npy after every point, and a line
 per point is appended to <out>/log.txt. Re-running with complete checkpoints computes nothing.
 
@@ -25,6 +29,9 @@ realisation.
 Usage (canonical, about 40 minutes on one core):
     python scripts/fssp_sweep.py --family wsg
     python scripts/fssp_sweep.py --family wsr
+Ring lattices at the thesis size (N = 1000, T = 2000):
+    python scripts/fssp_sweep.py --family wsr --degrees 8 10 6 --N 1000 --seed 1200 \
+        --out data/fssp/thesis-2026/wsr-N1000
 Small test:
     python scripts/fssp_sweep.py --family wsg --degrees 8 --L 6 --graphs 2 --configs 2 --T 20 --out /tmp/x
 """
@@ -49,15 +56,24 @@ P_DENS = 0.2        # rewiring probability used in the rho^0 sweep
 DENS_PROB = 0.5     # initial density used in the p sweep
 
 
-def make_graphs(family, k, p, G, L, rng):
+def effective_N(family, L, N=None):
+    """Number of nodes of the given family: N = L * L for wsg, N (default L * L) for wsr."""
+    if N is None:
+        return L * L
+    if family == "wsg" and N != L * L:
+        raise ValueError(f"family wsg has N = L * L = {L * L}; --N {N} is not possible")
+    return N
+
+
+def make_graphs(family, k, p, G, L, N, rng):
     """G network realisations of the given family, degree and rewiring probability."""
     if family == "wsg":
         lattice = torus_lattice(L, k)
         return [ws_rewire_grid(lattice, p, rng) for _ in range(G)]
-    return [ws_ring(L * L, k, p, seed=int(rng.integers(2**31))) for _ in range(G)]
+    return [ws_ring(N, k, p, seed=int(rng.integers(2**31))) for _ in range(G)]
 
 
-def sweep(family, k, seed, out, L, G, M, T, rule, log):
+def sweep(family, k, seed, out, L, N, G, M, T, rule, log):
     """Both sweeps for one (family, degree), with checkpointing."""
     rng = np.random.default_rng(seed)
     f_d = out / f"{family}_k{k}_dens.npy"
@@ -66,7 +82,7 @@ def sweep(family, k, seed, out, L, G, M, T, rule, log):
     prob_res = np.load(f_p) if f_p.exists() else np.full(len(PROB_ARRAY), np.nan)
     # rho^0 sweep at p = P_DENS (one set of realisations for all rho^0)
     if np.isnan(dens_res).any():
-        graphs = make_graphs(family, k, P_DENS, G, L, rng)
+        graphs = make_graphs(family, k, P_DENS, G, L, N, rng)
         for i, d in enumerate(DENS_ARRAY):
             if not np.isnan(dens_res[i]):
                 continue
@@ -79,7 +95,7 @@ def sweep(family, k, seed, out, L, G, M, T, rule, log):
         if not np.isnan(prob_res[i]):
             continue
         t0 = time.time()
-        graphs = make_graphs(family, k, p, G, L, rng)
+        graphs = make_graphs(family, k, p, G, L, N, rng)
         prob_res[i] = success_rate(graphs, rule, DENS_PROB, M, T, rng)
         np.save(f_p, prob_res)
         log(f"{family} k={k} p={p:.3f}: {prob_res[i]:.3f} ({time.time() - t0:.0f}s)")
@@ -91,7 +107,8 @@ def main(argv=None):
     parser.add_argument("--degrees", type=int, nargs="+", help="mean degrees (default: 8 12 4 for wsg, 8 10 6 for wsr)")
     parser.add_argument("--seed", type=int, help="seed base; the sweep for degree k is seeded with base + k (default 100 for wsg, 200 for wsr)")
     parser.add_argument("--out", type=Path, default=ROOT / "data" / "fssp" / "thesis-2026")
-    parser.add_argument("--L", type=int, default=30, help="side of the L x L network, N = L * L (default 30)")
+    parser.add_argument("--L", type=int, default=30, help="side of the L x L network (default 30)")
+    parser.add_argument("--N", type=int, help="number of nodes (default L * L; only wsr can differ from L * L)")
     parser.add_argument("--graphs", type=int, default=30, help="network realisations per point (default 30)")
     parser.add_argument("--configs", type=int, default=30, help="initial configurations per realisation (default 30)")
     parser.add_argument("--T", type=int, help="maximum number of time steps (default 2 N)")
@@ -101,7 +118,11 @@ def main(argv=None):
 
     degrees = args.degrees or DEFAULT_DEGREES[args.family]
     seed_base = args.seed if args.seed is not None else DEFAULT_SEED_BASE[args.family]
-    T = args.T if args.T is not None else 2 * args.L * args.L
+    try:
+        N = effective_N(args.family, args.L, args.N)
+    except ValueError as exc:
+        parser.error(str(exc))
+    T = args.T if args.T is not None else 2 * N
     rule = Rule(9, args.beta, args.sigma)
     args.out.mkdir(parents=True, exist_ok=True)
     with open(args.out / "log.txt", "a", encoding="utf-8") as logfile:
@@ -109,9 +130,9 @@ def main(argv=None):
             logfile.write(time.strftime("%H:%M:%S ") + msg + "\n")
             logfile.flush()
             print(msg, flush=True)
-        log(f"start {args.family} degrees={degrees} seed_base={seed_base} L={args.L} G={args.graphs} M={args.configs} T={T} rule={rule}")
+        log(f"start {args.family} degrees={degrees} seed_base={seed_base} L={args.L} N={N} G={args.graphs} M={args.configs} T={T} rule={rule}")
         for k in degrees:
-            sweep(args.family, k, seed_base + k, args.out, args.L, args.graphs, args.configs, T, rule, log)
+            sweep(args.family, k, seed_base + k, args.out, args.L, N, args.graphs, args.configs, T, rule, log)
         log("done")
 
 
