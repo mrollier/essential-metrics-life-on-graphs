@@ -103,6 +103,9 @@ The synchronisation-task figure of the publication, `fssp-succes_rate-degrees7_8
   for the ring lattices (⟨k⟩ = 6, 8, 10), are in `data/fssp/thesis-2026/`; the corrected figures
   are `figures/fssp-success_rate-wsg-degrees4_8_12-N900-T1800.pdf` and
   `figures/fssp-success_rate-wsr-degrees6_8_10-N900-T1800.pdf`.
+- The thesis figure itself is drawn at N = 1000, the size at which the thesis defines its
+  ring-based Watts-Strogatz family: `figures/fssp-success_rate-wsr-degrees6_8_10-N1000-T2000.pdf`,
+  from the data and numbers in `data/fssp/thesis-2026/wsr-N1000/`.
 - The notebook cell that plotted the figure applied a quick fix to the entries at initial
   density 0 and 1; with a success criterion that includes t = 0 those entries are 1 by
   construction, and the fix has been removed.
